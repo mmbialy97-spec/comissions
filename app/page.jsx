@@ -28,8 +28,14 @@ const C = {
 const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function getMonthKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${d.getMonth()}`;
+  if (!date || typeof date !== "string" || !date.includes("-")) return null;
+  // Parse YYYY-MM-DD without timezone shift by splitting manually
+  const parts = date.split("-");
+  if (parts.length < 2) return null;
+  const year = parseInt(parts[0]);
+  const month = parseInt(parts[1]) - 1; // 0-indexed
+  if (isNaN(year) || isNaN(month)) return null;
+  return `${year}-${month}`;
 }
 
 function getCurrentMonthKey() {
@@ -38,8 +44,11 @@ function getCurrentMonthKey() {
 }
 
 function formatMonthLabel(key) {
+  if (!key) return "Unknown";
   const [year, month] = key.split("-");
-  return `${monthNames[parseInt(month)]} ${year}`;
+  const m = parseInt(month);
+  if (isNaN(m) || !monthNames[m]) return "Unknown";
+  return `${monthNames[m]} ${year}`;
 }
 
 // ─── Google Sheets API helpers ────────────────────────────────────────────────
@@ -98,10 +107,10 @@ export default function App() {
 
   // ─── Derived data ───────────────────────────────────────────────────────────
 
-  const allMonths = [...new Set(sales.map(s => getMonthKey(s.date)))].sort().reverse();
+  const allMonths = [...new Set(sales.map(s => getMonthKey(s.date)).filter(Boolean))].sort().reverse();
   if (!allMonths.includes(getCurrentMonthKey())) allMonths.unshift(getCurrentMonthKey());
 
-  const filteredSales = sales.filter(s => getMonthKey(s.date) === selectedMonth);
+  const filteredSales = sales.filter(s => getMonthKey(s.date) === selectedMonth && getMonthKey(s.date) !== null);
   const directSales = filteredSales.filter(s => !String(s.referral).trim());
   const referralSales = filteredSales.filter(s => String(s.referral).trim());
 
