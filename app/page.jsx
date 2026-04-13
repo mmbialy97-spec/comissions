@@ -28,14 +28,19 @@ const C = {
 const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function getMonthKey(date) {
-  if (!date || typeof date !== "string" || !date.includes("-")) return null;
-  // Parse YYYY-MM-DD without timezone shift by splitting manually
-  const parts = date.split("-");
-  if (parts.length < 2) return null;
-  const year = parseInt(parts[0]);
-  const month = parseInt(parts[1]) - 1; // 0-indexed
-  if (isNaN(year) || isNaN(month)) return null;
-  return `${year}-${month}`;
+  if (!date || typeof date !== "string" || !date.trim()) return null;
+  // Handle "YYYY-MM-DD" format
+  if (/^\d{4}-\d{2}-\d{2}/.test(date.trim())) {
+    const parts = date.trim().split("-");
+    const year = parseInt(parts[0]);
+    const month = parseInt(parts[1]) - 1;
+    if (isNaN(year) || isNaN(month)) return null;
+    return `${year}-${month}`;
+  }
+  // Handle full date string like "Mon Apr 13 2026 00:00:00 GMT+0100..."
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return null;
+  return `${d.getFullYear()}-${d.getMonth()}`;
 }
 
 function getCurrentMonthKey() {
