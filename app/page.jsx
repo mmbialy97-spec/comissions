@@ -93,6 +93,7 @@ export default function App() {
   });
   const [submitted, setSubmitted] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
+  const [ytd, setYtd] = useState(false);
 
   // Load sales from Google Sheets on mount
   const loadSales = useCallback(async () => {
@@ -115,7 +116,13 @@ export default function App() {
   const allMonths = [...new Set(sales.map(s => getMonthKey(s.date)).filter(Boolean))].sort().reverse();
   if (!allMonths.includes(getCurrentMonthKey())) allMonths.unshift(getCurrentMonthKey());
 
-  const filteredSales = sales.filter(s => getMonthKey(s.date) === selectedMonth && getMonthKey(s.date) !== null);
+  const currentYear = new Date().getFullYear();
+  const filteredSales = sales.filter(s => {
+    const mk = getMonthKey(s.date);
+    if (!mk) return false;
+    if (ytd) return mk.startsWith(String(currentYear) + "-");
+    return mk === selectedMonth;
+  });
   const directSales = filteredSales.filter(s => !String(s.referral).trim());
   const referralSales = filteredSales.filter(s => String(s.referral).trim());
 
@@ -411,8 +418,11 @@ export default function App() {
 
           {/* Month picker */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28, justifyContent: "center" }}>
+            <button className={`month-pill ${ytd ? "active" : ""}`} onClick={() => setYtd(true)}>
+              {new Date().getFullYear()} YTD
+            </button>
             {allMonths.map(m => (
-              <button key={m} className={`month-pill ${selectedMonth === m ? "active" : ""}`} onClick={() => setSelectedMonth(m)}>
+              <button key={m} className={`month-pill ${!ytd && selectedMonth === m ? "active" : ""}`} onClick={() => { setYtd(false); setSelectedMonth(m); }}>
                 {formatMonthLabel(m)}
               </button>
             ))}
@@ -449,7 +459,7 @@ export default function App() {
               </div>
               {staffLeaderboard.length === 0 && (
                 <div style={{ textAlign: "center", padding: "32px 0" }}>
-                  <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {formatMonthLabel(selectedMonth)}</div>
+                  <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
                 </div>
               )}
               {staffLeaderboard.map((s, i) => (
@@ -475,7 +485,7 @@ export default function App() {
             referralLeaderboard.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div>
-                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No referral closes for {formatMonthLabel(selectedMonth)}</div>
+                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No referral closes for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
               </div>
             ) : (
               <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
@@ -505,7 +515,7 @@ export default function App() {
             filteredSales.length === 0 ? (
               <div style={{ textAlign: "center", padding: "40px 0" }}>
                 <div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div>
-                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {formatMonthLabel(selectedMonth)}</div>
+                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
               </div>
             ) : (
               <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
