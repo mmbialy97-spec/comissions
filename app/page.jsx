@@ -31,9 +31,9 @@ function isMemberActive(saleMemberName, activeMembers) {
 }
 
 function parseActiveMembers(csvText) {
-  const lines = csvText.trim().split(/
-?
-/);
+  const lines = csvText.trim().split(/\r?\n/);
+
+
   const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
   const firstIdx = headers.indexOf("first name");
   const lastIdx = headers.indexOf("last name");
@@ -42,7 +42,7 @@ function parseActiveMembers(csvText) {
     const cols = line.split(",");
     const first = (cols[firstIdx] || "").trim();
     const last = (cols[lastIdx] || "").trim();
-    return `${first} ${last}`.trim();
+    return (first + " " + last).trim();
   }).filter(Boolean);
 }
 
