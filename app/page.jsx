@@ -94,7 +94,7 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
   const [ytd, setYtd] = useState(false);
-  const [paidIds, setPaidIds] = useState(() => JSON.parse(localStorage.getItem("prana_paid_ids") || "[]"));
+  const [paidIds, setPaidIds] = useState([]);
 
   // Load sales from Google Sheets on mount
   const loadSales = useCallback(async () => {
@@ -102,6 +102,9 @@ export default function App() {
       setError(null);
       const data = await fetchSales();
       setSales(data);
+      // Extract paid ids from sheet data
+      const paid = data.filter(s => s.paid === true).map(s => String(s.id));
+      setPaidIds(paid);
     } catch (e) {
       setError("Could not load sales data. Check your connection.");
       console.error(e);
