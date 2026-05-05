@@ -8,6 +8,44 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJpDn6SlbykmbU
 
 const COMMISSION_PER_SALE = 50;
 
+// Fuzzy name match — checks if any word in saleeName appears in memberName or vice versa
+function fuzzyNameMatch(saleName, memberFullName) {
+  if (!saleName || !memberFullName) return false;
+  const normalize = s => s.toLowerCase().replace(/[^a-z\s]/g, "").trim();
+  const a = normalize(saleName);
+  const b = normalize(memberFullName);
+  if (a === b) return true;
+  const aWords = a.split(/\s+/).filter(w => w.length > 2);
+  const bWords = b.split(/\s+/).filter(w => w.length > 2);
+  // Match if at least 2 words overlap, or if one name contains the other
+  const overlap = aWords.filter(w => bWords.includes(w));
+  if (overlap.length >= 2) return true;
+  if (aWords.length === 1 && bWords.some(w => w.startsWith(aWords[0]))) return true;
+  if (b.includes(a) || a.includes(b)) return true;
+  return false;
+}
+
+function isMemberActive(saleMemberName, activeMembers) {
+  if (activeMembers.length === 0) return null; // null = not checked yet
+  return activeMembers.some(m => fuzzyNameMatch(saleMemberName, m));
+}
+
+function parseActiveMembers(csvText) {
+  const lines = csvText.trim().split(/
+?
+/);
+  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
+  const firstIdx = headers.indexOf("first name");
+  const lastIdx = headers.indexOf("last name");
+  if (firstIdx === -1 || lastIdx === -1) return [];
+  return lines.slice(1).map(line => {
+    const cols = line.split(",");
+    const first = (cols[firstIdx] || "").trim();
+    const last = (cols[lastIdx] || "").trim();
+    return `${first} ${last}`.trim();
+  }).filter(Boolean);
+}
+
 const C = {
   bg: "#F5F0E8",
   cream: "#FAF7F2",
@@ -59,21 +97,38 @@ function formatMonthLabel(key) {
 // ─── Google Sheets API helpers ────────────────────────────────────────────────
 
 async function fetchSales() {
-  const res = await fetch(APPS_SCRIPT_URL, { method: "GET" });
+  const res = await fetch(APPS_SCRIPT_URL, {
+    method: "GET",
+    redirect: "follow",
+    mode: "cors",
+  });
   if (!res.ok) throw new Error(`GET failed: ${res.status}`);
-  const data = await res.json();
-  // Normalise commission to number in case Sheets returns string
-  return data.map(s => ({ ...s, commission: Number(s.commission) }));
+  const text = await res.text();
+  const data = JSON.parse(text);
+  return data.map(s => ({
+    ...s,
+    id: s.id || Date.now(),
+    staff: String(s.staff || "").trim(),
+    memberName: String(s.memberName || "").trim(),
+    date: String(s.date || "").trim(),
+    referral: String(s.referral || "").trim(),
+    commission: Number(s.commission) || 0,
+    loggedAt: String(s.loggedAt || "").trim(),
+    paid: s.paid === true || String(s.paid).trim() === "true",
+  })).filter(s => s.staff && s.memberName);
 }
 
 async function postSale(sale) {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
-    headers: { "Content-Type": "text/plain" }, // Apps Script requires text/plain for doPost
+    redirect: "follow",
+    mode: "cors",
+    headers: { "Content-Type": "text/plain" },
     body: JSON.stringify(sale),
   });
   if (!res.ok) throw new Error(`POST failed: ${res.status}`);
-  return await res.json();
+  const text = await res.text();
+  return JSON.parse(text);
 }
 
 // ─── App ──────────────────────────────────────────────────────────────────────
@@ -94,7 +149,21 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
   const [ytd, setYtd] = useState(false);
-  const [paidIds, setPaidIds] = useState([]);
+  const [activeMembers, setActiveMembers] = useState([]); // parsed from CSV upload
+  const [csvUploaded, setCsvUploaded] = useState(false);
+  const [paidIds, setPaidIds] = useState([]);  // loaded from sheet on mount
+
+  function handleCsvUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const members = parseActiveMembers(ev.target.result);
+      setActiveMembers(members);
+      setCsvUploaded(true);
+    };
+    reader.readAsText(file);
+  }
 
   // Load sales from Google Sheets on mount
   const loadSales = useCallback(async () => {
@@ -427,6 +496,20 @@ export default function App() {
             </button>
           </div>
 
+          {/* CSV Upload */}
+          <div style={{ background: C.white, border: `1px solid ${C.border}`, padding: "16px 20px", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
+            <div>
+              <div className="sans" style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: C.text, marginBottom: 3 }}>Member Verification</div>
+              <div className="sans" style={{ fontSize: 12, color: C.muted }}>
+                {csvUploaded ? `${activeMembers.length} active members loaded` : "Upload active members CSV to flag inactive sales"}
+              </div>
+            </div>
+            <label style={{ background: csvUploaded ? C.green : C.soft, color: csvUploaded ? C.white : C.text, border: `1px solid ${csvUploaded ? C.green : C.border}`, cursor: "pointer", fontFamily: "'Jost', sans-serif", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "8px 14px", borderRadius: 4, fontWeight: 500, whiteSpace: "nowrap" }}>
+              {csvUploaded ? "✓ Loaded — Re-upload" : "Upload CSV"}
+              <input type="file" accept=".csv" onChange={handleCsvUpload} style={{ display: "none" }} />
+            </label>
+          </div>
+
           {/* Month picker */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28, justifyContent: "center" }}>
             <button className={`month-pill ${ytd ? "active" : ""}`} onClick={() => setYtd(true)}>
@@ -438,6 +521,21 @@ export default function App() {
               </button>
             ))}
           </div>
+
+          {/* Flagged sales banner */}
+          {csvUploaded && (() => {
+            const flagged = filteredSales.filter(s => !s.referral.trim() && isMemberActive(s.memberName, activeMembers) === false);
+            if (flagged.length === 0) return null;
+            return (
+              <div style={{ background: "rgba(192,57,43,0.06)", border: "1px solid rgba(192,57,43,0.2)", padding: "12px 18px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div className="sans" style={{ fontSize: 11, fontWeight: 600, color: C.error, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>⚠ {flagged.length} Inactive Member{flagged.length > 1 ? "s" : ""} Flagged</div>
+                  <div className="sans" style={{ fontSize: 12, color: C.muted }}>{flagged.map(s => s.memberName).join(", ")}</div>
+                </div>
+                <div className="sans" style={{ fontSize: 13, color: C.error, fontWeight: 600 }}>${flagged.length * COMMISSION_PER_SALE} at risk</div>
+              </div>
+            );
+          })()}
 
           {/* Summary cards */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 32 }}>
@@ -566,6 +664,15 @@ export default function App() {
                           {paidIds.includes(String(s.id)) ? "✓ paid" : "unpaid"}
                         </div>
                       )}
+                      {(() => {
+                        const status = isMemberActive(s.memberName, activeMembers);
+                        if (status === null) return null;
+                        return (
+                          <div className="sans" style={{ fontSize: 10, marginTop: 2, color: status ? C.green : C.error, fontWeight: 600 }}>
+                            {status ? "✓ active" : "⚠ inactive"}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 ))}
