@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-// API proxy route — avoids CORS issues with Apps Script
-const APPS_SCRIPT_URL = "/api/commissions";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJpDn6SlbykmbU4tJEmjTq_ogeOJgnBeRVSJGlfNedmet9ROtyNb8JcxWEUCM6Rl1bMg/exec";
 
 const COMMISSION_PER_SALE = 50;
 
@@ -99,7 +98,6 @@ async function fetchSales() {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "GET",
     redirect: "follow",
-    mode: "cors",
   });
   if (!res.ok) throw new Error(`GET failed: ${res.status}`);
   const text = await res.text();
@@ -121,7 +119,6 @@ async function postSale(sale) {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: "POST",
     redirect: "follow",
-    mode: "cors",
     headers: { "Content-Type": "text/plain" },
     body: JSON.stringify(sale),
   });
