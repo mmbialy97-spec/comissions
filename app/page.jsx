@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 
-// ─── CONFIG — fill these in before deploying ──────────────────────────────────
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJpDn6SlbykmbU4tJEmjTq_ogeOJgnBeRVSJGlfNedmet9ROtyNb8JcxWEUCM6Rl1bMg/exec";
-// ─────────────────────────────────────────────────────────────────────────────
+// API proxy route — avoids CORS issues with Apps Script
+const APPS_SCRIPT_URL = "/api/commissions";
 
 const COMMISSION_PER_SALE = 50;
 
