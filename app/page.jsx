@@ -94,6 +94,7 @@ export default function App() {
   const [submitted, setSubmitted] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
   const [ytd, setYtd] = useState(false);
+  const [paidIds, setPaidIds] = useState(() => JSON.parse(localStorage.getItem("prana_paid_ids") || "[]"));
 
   // Load sales from Google Sheets on mount
   const loadSales = useCallback(async () => {
@@ -136,7 +137,14 @@ export default function App() {
     else staffMap[key].direct++;
   });
   const staffLeaderboard = Object.values(staffMap)
-    .map(s => ({ ...s, total: s.direct + s.referral, commission: s.direct * COMMISSION_PER_SALE }))
+    .map(s => {
+      const myDirectSales = filteredSales.filter(fs => 
+        String(fs.staff).trim().toLowerCase() === s.name.trim().toLowerCase() && !String(fs.referral).trim()
+      );
+      const paidCommission = myDirectSales.filter(fs => paidIds.includes(String(fs.id))).length * COMMISSION_PER_SALE;
+      const unpaidCommission = myDirectSales.filter(fs => !paidIds.includes(String(fs.id))).length * COMMISSION_PER_SALE;
+      return { ...s, total: s.direct + s.referral, commission: s.direct * COMMISSION_PER_SALE, paidCommission, unpaidCommission };
+    })
     .sort((a, b) => b.total - a.total);
 
   // Referral leaderboard
@@ -464,7 +472,7 @@ export default function App() {
               )}
               {staffLeaderboard.map((s, i) => (
                 <div key={s.name} style={{
-                  display: "grid", gridTemplateColumns: "1fr 56px 56px 70px", gap: 8, alignItems: "center",
+                  display: "grid", gridTemplateColumns: "1fr 56px 56px 70px 70px 110px", gap: 8, alignItems: "center",
                   padding: "14px 18px", borderBottom: i < staffLeaderboard.length - 1 ? `1px solid ${C.border}` : "none",
                   background: i === 0 ? "rgba(44,74,62,0.03)" : "none"
                 }}>
@@ -475,6 +483,22 @@ export default function App() {
                   <span className="sans" style={{ fontSize: 13, color: s.direct > 0 ? C.green : C.muted, textAlign: "right", fontWeight: 500 }}>{s.direct}</span>
                   <span className="sans" style={{ fontSize: 13, color: s.referral > 0 ? C.purple : C.muted, textAlign: "right", fontWeight: 500 }}>{s.referral}</span>
                   <span className="sans" style={{ fontSize: 13, color: s.commission > 0 ? C.gold : C.muted, textAlign: "right", fontWeight: 600 }}>${s.commission}</span>
+                  <span className="sans" style={{ fontSize: 13, color: s.unpaidCommission > 0 ? C.green : C.muted, textAlign: "right", fontWeight: 600 }}>
+                    {s.unpaidCommission > 0 ? `$${s.unpaidCommission}` : "—"}
+                  </span>
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    {s.unpaidCommission > 0 ? (
+                      <button
+                        onClick={() => markStaffPaid(s.name)}
+                        className="sans"
+                        style={{ background: C.green, color: C.white, border: "none", cursor: "pointer", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 10px", borderRadius: 4, fontWeight: 500, whiteSpace: "nowrap" }}
+                      >
+                        Mark Paid
+                      </button>
+                    ) : (
+                      <span className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>✓ Paid</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -534,6 +558,11 @@ export default function App() {
                     <div style={{ textAlign: "right" }}>
                       <div className="sans" style={{ fontSize: 12, color: s.referral ? C.purple : C.green, fontWeight: 600 }}>{s.referral ? "ref" : "$50"}</div>
                       <div className="sans" style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{s.date}</div>
+                      {!s.referral && (
+                        <div className="sans" style={{ fontSize: 10, marginTop: 2, color: paidIds.includes(String(s.id)) ? C.muted : C.gold, fontWeight: 500 }}>
+                          {paidIds.includes(String(s.id)) ? "✓ paid" : "unpaid"}
+                        </div>
+                      )}
                     </div>
                   </div>
                 ))}
