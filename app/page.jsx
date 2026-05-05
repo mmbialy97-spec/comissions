@@ -3,69 +3,18 @@
 import { useState, useEffect, useCallback } from "react";
 
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbwJpDn6SlbykmbU4tJEmjTq_ogeOJgnBeRVSJGlfNedmet9ROtyNb8JcxWEUCM6Rl1bMg/exec";
-
 const COMMISSION_PER_SALE = 50;
 
-// Fuzzy name match — checks if any word in saleeName appears in memberName or vice versa
-function fuzzyNameMatch(saleName, memberFullName) {
-  if (!saleName || !memberFullName) return false;
-  const normalize = s => s.toLowerCase().replace(/[^a-z\s]/g, "").trim();
-  const a = normalize(saleName);
-  const b = normalize(memberFullName);
-  if (a === b) return true;
-  const aWords = a.split(/\s+/).filter(w => w.length > 2);
-  const bWords = b.split(/\s+/).filter(w => w.length > 2);
-  // Match if at least 2 words overlap, or if one name contains the other
-  const overlap = aWords.filter(w => bWords.includes(w));
-  if (overlap.length >= 2) return true;
-  if (aWords.length === 1 && bWords.some(w => w.startsWith(aWords[0]))) return true;
-  if (b.includes(a) || a.includes(b)) return true;
-  return false;
-}
-
-function isMemberActive(saleMemberName, activeMembers) {
-  if (activeMembers.length === 0) return null; // null = not checked yet
-  return activeMembers.some(m => fuzzyNameMatch(saleMemberName, m));
-}
-
-function parseActiveMembers(csvText) {
-  const lines = csvText.trim().split(/\r?\n/);
-
-
-  const headers = lines[0].split(",").map(h => h.trim().toLowerCase());
-  const firstIdx = headers.indexOf("first name");
-  const lastIdx = headers.indexOf("last name");
-  if (firstIdx === -1 || lastIdx === -1) return [];
-  return lines.slice(1).map(line => {
-    const cols = line.split(",");
-    const first = (cols[firstIdx] || "").trim();
-    const last = (cols[lastIdx] || "").trim();
-    return (first + " " + last).trim();
-  }).filter(Boolean);
-}
-
 const C = {
-  bg: "#F5F0E8",
-  cream: "#FAF7F2",
-  card: "#FFFFFF",
-  border: "#E2D9C8",
-  borderDark: "#C8B99A",
-  green: "#2C4A3E",
-  greenLight: "#3D6355",
-  gold: "#B8860B",
-  text: "#1A2E26",
-  muted: "#7A8C7E",
-  soft: "#EDE8DF",
-  purple: "#6B5B7B",
-  white: "#FFFFFF",
-  error: "#C0392B",
+  bg: "#F5F0E8", card: "#FFFFFF", border: "#E2D9C8", borderDark: "#C8B99A",
+  green: "#2C4A3E", greenLight: "#3D6355", gold: "#B8860B",
+  text: "#1A2E26", muted: "#7A8C7E", soft: "#EDE8DF", purple: "#6B5B7B", white: "#FFFFFF", error: "#C0392B",
 };
 
 const monthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function getMonthKey(date) {
   if (!date || typeof date !== "string" || !date.trim()) return null;
-  // Handle "YYYY-MM-DD" format
   if (/^\d{4}-\d{2}-\d{2}/.test(date.trim())) {
     const parts = date.trim().split("-");
     const year = parseInt(parts[0]);
@@ -73,7 +22,6 @@ function getMonthKey(date) {
     if (isNaN(year) || isNaN(month)) return null;
     return `${year}-${month}`;
   }
-  // Handle full date string like "Mon Apr 13 2026 00:00:00 GMT+0100..."
   const d = new Date(date);
   if (isNaN(d.getTime())) return null;
   return `${d.getFullYear()}-${d.getMonth()}`;
@@ -92,13 +40,8 @@ function formatMonthLabel(key) {
   return `${monthNames[m]} ${year}`;
 }
 
-// ─── Google Sheets API helpers ────────────────────────────────────────────────
-
 async function fetchSales() {
-  const res = await fetch(APPS_SCRIPT_URL, {
-    method: "GET",
-    redirect: "follow",
-  });
+  const res = await fetch(APPS_SCRIPT_URL, { method: "GET", redirect: "follow" });
   if (!res.ok) throw new Error(`GET failed: ${res.status}`);
   const text = await res.text();
   const data = JSON.parse(text);
@@ -111,7 +54,6 @@ async function fetchSales() {
     referral: String(s.referral || "").trim(),
     commission: Number(s.commission) || 0,
     loggedAt: String(s.loggedAt || "").trim(),
-    paid: s.paid === true || String(s.paid).trim() === "true",
   })).filter(s => s.staff && s.memberName);
 }
 
@@ -127,8 +69,6 @@ async function postSale(sale) {
   return JSON.parse(text);
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
-
 export default function App() {
   const [view, setView] = useState("log");
   const [ceoTab, setCeoTab] = useState("staff");
@@ -136,51 +76,24 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState(null);
-  const [form, setForm] = useState({
-    staff: "",
-    memberName: "",
-    date: new Date().toISOString().split("T")[0],
-    referral: "",
-  });
+  const [form, setForm] = useState({ staff: "", memberName: "", date: new Date().toISOString().split("T")[0], referral: "" });
   const [submitted, setSubmitted] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonthKey());
   const [ytd, setYtd] = useState(false);
-  const [activeMembers, setActiveMembers] = useState([]); // parsed from CSV upload
-  const [csvUploaded, setCsvUploaded] = useState(false);
-  const [paidIds, setPaidIds] = useState([]);  // loaded from sheet on mount
 
-  function handleCsvUpload(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const members = parseActiveMembers(ev.target.result);
-      setActiveMembers(members);
-      setCsvUploaded(true);
-    };
-    reader.readAsText(file);
-  }
-
-  // Load sales from Google Sheets on mount
   const loadSales = useCallback(async () => {
     try {
       setError(null);
       const data = await fetchSales();
       setSales(data);
-      // Extract paid ids from sheet data
-      const paid = data.filter(s => s.paid === true).map(s => String(s.id));
-      setPaidIds(paid);
     } catch (e) {
       setError("Could not load sales data. Check your connection.");
-      console.error(e);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => { loadSales(); }, [loadSales]);
-
-  // ─── Derived data ───────────────────────────────────────────────────────────
 
   const allMonths = [...new Set(sales.map(s => getMonthKey(s.date)).filter(Boolean))].sort().reverse();
   if (!allMonths.includes(getCurrentMonthKey())) allMonths.unshift(getCurrentMonthKey());
@@ -192,35 +105,26 @@ export default function App() {
     if (ytd) return mk.startsWith(String(currentYear) + "-");
     return mk === selectedMonth;
   });
-  const directSales = filteredSales.filter(s => !String(s.referral).trim());
-  const referralSales = filteredSales.filter(s => String(s.referral).trim());
 
-  // Staff leaderboard — case-insensitive grouping
+  const directSales = filteredSales.filter(s => !s.referral.trim());
+  const referralSales = filteredSales.filter(s => s.referral.trim());
+
   const staffMap = {};
   filteredSales.forEach(s => {
-    const key = String(s.staff).trim().toLowerCase();
-    const display = String(s.staff).trim();
+    const key = s.staff.trim().toLowerCase();
+    const display = s.staff.trim();
     if (!staffMap[key]) staffMap[key] = { name: display, direct: 0, referral: 0 };
-    if (String(s.referral).trim()) staffMap[key].referral++;
+    if (s.referral.trim()) staffMap[key].referral++;
     else staffMap[key].direct++;
   });
   const staffLeaderboard = Object.values(staffMap)
-    .map(s => {
-      const myDirectSales = filteredSales.filter(fs => 
-        String(fs.staff).trim().toLowerCase() === s.name.trim().toLowerCase() && !String(fs.referral).trim()
-      );
-      const paidCommission = myDirectSales.filter(fs => paidIds.includes(String(fs.id))).length * COMMISSION_PER_SALE;
-      const unpaidCommission = myDirectSales.filter(fs => !paidIds.includes(String(fs.id))).length * COMMISSION_PER_SALE;
-      return { ...s, total: s.direct + s.referral, commission: s.direct * COMMISSION_PER_SALE, paidCommission, unpaidCommission };
-    })
+    .map(s => ({ ...s, total: s.direct + s.referral, commission: s.direct * COMMISSION_PER_SALE }))
     .sort((a, b) => b.total - a.total);
 
-  // Referral leaderboard
   const referralMap = {};
   referralSales.forEach(s => {
-    const key = String(s.referral).trim().toLowerCase();
-    const display = String(s.referral).trim();
-    if (!referralMap[key]) referralMap[key] = { name: display, closes: 0 };
+    const key = s.referral.trim().toLowerCase();
+    if (!referralMap[key]) referralMap[key] = { name: s.referral.trim(), closes: 0 };
     referralMap[key].closes++;
   });
   const referralLeaderboard = Object.values(referralMap).sort((a, b) => b.closes - a.closes);
@@ -229,57 +133,37 @@ export default function App() {
   const hasReferral = form.referral.trim().length > 0;
   const canSubmit = form.staff.trim() && form.memberName.trim() && form.date;
 
-  // My stats (log view)
   const myKey = form.staff.trim().toLowerCase();
-  const myMonthSales = sales.filter(s =>
-    String(s.staff).trim().toLowerCase() === myKey &&
-    getMonthKey(s.date) === getCurrentMonthKey()
-  );
-  const myMonthDirect = myMonthSales.filter(s => !String(s.referral).trim());
-  const myMonthReferral = myMonthSales.filter(s => String(s.referral).trim());
-  const myRecent = sales.filter(s => String(s.staff).trim().toLowerCase() === myKey).slice(0, 6);
-
-  // ─── Submit ─────────────────────────────────────────────────────────────────
+  const myMonthDirect = sales.filter(s => s.staff.trim().toLowerCase() === myKey && getMonthKey(s.date) === getCurrentMonthKey() && !s.referral.trim());
+  const myMonthReferral = sales.filter(s => s.staff.trim().toLowerCase() === myKey && getMonthKey(s.date) === getCurrentMonthKey() && s.referral.trim());
+  const myRecent = sales.filter(s => s.staff.trim().toLowerCase() === myKey).slice(0, 6);
 
   async function handleSubmit() {
     if (!canSubmit || syncing) return;
     const newSale = {
-      id: Date.now(),
-      staff: form.staff.trim(),
-      memberName: form.memberName.trim(),
-      date: form.date,
-      referral: form.referral.trim(),
-      commission: hasReferral ? 0 : COMMISSION_PER_SALE,
-      loggedAt: new Date().toISOString(),
+      id: Date.now(), staff: form.staff.trim(), memberName: form.memberName.trim(),
+      date: form.date, referral: form.referral.trim(),
+      commission: hasReferral ? 0 : COMMISSION_PER_SALE, loggedAt: new Date().toISOString(),
     };
-    setSyncing(true);
-    setError(null);
+    setSyncing(true); setError(null);
     try {
       await postSale(newSale);
-      // Optimistically update local state immediately
       setSales(prev => [newSale, ...prev]);
       setForm(f => ({ ...f, memberName: "", referral: "", date: new Date().toISOString().split("T")[0] }));
       setSubmitted(true);
       setTimeout(() => setSubmitted(false), 2500);
     } catch (e) {
       setError("Failed to save sale. Please try again.");
-      console.error(e);
     } finally {
       setSyncing(false);
     }
   }
 
-  // ─── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'Cormorant Garamond', 'Georgia', serif" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: "'Cormorant Garamond', Georgia, serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Jost:wght@300;400;500;600&display=swap');
         * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: #F5F0E8; }
-        ::-webkit-scrollbar { width: 3px; }
-        ::-webkit-scrollbar-track { background: #EDE8DF; }
-        ::-webkit-scrollbar-thumb { background: #C8B99A; border-radius: 2px; }
         .sans { font-family: 'Jost', sans-serif; }
         .tab-btn { background: none; border: none; cursor: pointer; font-family: 'Jost', sans-serif; transition: all 0.2s; letter-spacing: 0.12em; text-transform: uppercase; font-size: 11px; font-weight: 500; }
         .sub-tab { background: none; border: none; border-bottom: 1.5px solid transparent; cursor: pointer; font-family: 'Jost', sans-serif; font-size: 11px; font-weight: 500; padding: 8px 0; color: #7A8C7E; transition: all 0.2s; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -287,9 +171,9 @@ export default function App() {
         .primary-btn { border: none; cursor: pointer; font-family: 'Jost', sans-serif; font-weight: 500; font-size: 12px; padding: 15px 0; width: 100%; transition: all 0.2s; letter-spacing: 0.15em; text-transform: uppercase; }
         .primary-btn:disabled { background: #EDE8DF !important; color: #7A8C7E !important; cursor: not-allowed; border: 1px solid #E2D9C8 !important; }
         .primary-btn:not(:disabled):hover { opacity: 0.88; transform: translateY(-1px); }
-        input { background: #FFFFFF; border: 1px solid #E2D9C8; color: #1A2E26; font-family: 'Jost', sans-serif; font-size: 14px; font-weight: 300; padding: 13px 16px; border-radius: 0; width: 100%; outline: none; transition: border 0.2s; letter-spacing: 0.03em; }
+        input { background: #fff; border: 1px solid #E2D9C8; color: #1A2E26; font-family: 'Jost', sans-serif; font-size: 14px; font-weight: 300; padding: 13px 16px; border-radius: 0; width: 100%; outline: none; transition: border 0.2s; letter-spacing: 0.03em; }
         input:focus { border-color: #2C4A3E; }
-        input::placeholder { color: #7A8C7E; font-weight: 300; }
+        input::placeholder { color: #7A8C7E; }
         input[type="date"]::-webkit-calendar-picker-indicator { opacity: 0.4; cursor: pointer; }
         .month-pill { background: none; border: 1px solid #E2D9C8; color: #7A8C7E; font-family: 'Jost', sans-serif; font-size: 10px; font-weight: 500; padding: 5px 12px; border-radius: 20px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.1em; text-transform: uppercase; }
         .month-pill.active { border-color: #2C4A3E; color: #2C4A3E; background: rgba(44,74,62,0.06); }
@@ -298,13 +182,12 @@ export default function App() {
         @keyframes pop { 0%,100% { transform: scale(1); } 50% { transform: scale(1.02); } }
         .pop { animation: pop 0.3s ease; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-top-color: white; border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; vertical-align: middle; margin-right: 8px; }
-        .stat-card { background: #FFFFFF; border: 1px solid #E2D9C8; padding: 20px 16px; }
+        .stat-card { background: #fff; border: 1px solid #E2D9C8; padding: 20px 16px; }
         .ornament { color: #B8860B; font-size: 14px; letter-spacing: 4px; }
-        .error-bar { background: rgba(192,57,43,0.08); border: 1px solid rgba(192,57,43,0.25); color: #C0392B; font-family: 'Jost', sans-serif; font-size: 12px; padding: 10px 16px; letter-spacing: 0.03em; margin-bottom: 16px; }
+        .error-bar { background: rgba(192,57,43,0.08); border: 1px solid rgba(192,57,43,0.25); color: #C0392B; font-family: 'Jost', sans-serif; font-size: 12px; padding: 10px 16px; margin-bottom: 16px; }
       `}</style>
 
-      {/* ── Header ── */}
+      {/* Header */}
       <div style={{ background: C.green, padding: "0 24px" }}>
         <div style={{ maxWidth: 600, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center", height: 58 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -316,125 +199,52 @@ export default function App() {
           </div>
           <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.08)", padding: 3, borderRadius: 4 }}>
             {[["log", "Log Sale"], ["ceo", "CEO View"]].map(([v, label]) => (
-              <button key={v} className="tab-btn" onClick={() => setView(v)} style={{
-                padding: "7px 14px", borderRadius: 3,
-                background: view === v ? C.gold : "none",
-                color: view === v ? C.white : "rgba(255,255,255,0.55)",
-              }}>
-                {label}
-              </button>
+              <button key={v} className="tab-btn" onClick={() => setView(v)} style={{ padding: "7px 14px", borderRadius: 3, background: view === v ? C.gold : "none", color: view === v ? C.white : "rgba(255,255,255,0.55)" }}>{label}</button>
             ))}
           </div>
         </div>
       </div>
 
-      {/* ── Loading state ── */}
       {loading && (
         <div style={{ textAlign: "center", padding: "80px 24px" }}>
           <div style={{ width: 24, height: 24, border: `2px solid ${C.border}`, borderTopColor: C.green, borderRadius: "50%", animation: "spin 0.7s linear infinite", margin: "0 auto 16px" }} />
-          <div className="sans" style={{ fontSize: 12, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase" }}>Loading sales data...</div>
+          <div className="sans" style={{ fontSize: 12, color: C.muted, letterSpacing: "0.1em", textTransform: "uppercase" }}>Loading...</div>
         </div>
       )}
 
-      {/* ── LOG SALE VIEW ── */}
+      {/* LOG SALE */}
       {!loading && view === "log" && (
         <div style={{ maxWidth: 440, margin: "0 auto", padding: "44px 24px 60px" }} className="fade-in">
           <div style={{ textAlign: "center", marginBottom: 36 }}>
             <div className="ornament">✦ ✦ ✦</div>
             <h1 style={{ fontSize: 34, fontWeight: 400, marginTop: 12, marginBottom: 6, fontStyle: "italic" }}>Log a Sale</h1>
             <p className="sans" style={{ color: C.muted, fontSize: 12, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-              Direct close = <span style={{ color: C.green, fontWeight: 500 }}>$50</span>
-              &nbsp;·&nbsp;
-              Referral = <span style={{ color: C.purple, fontWeight: 500 }}>$0</span>
+              Direct close = <span style={{ color: C.green, fontWeight: 500 }}>$50</span> · Referral = <span style={{ color: C.purple, fontWeight: 500 }}>$0</span>
             </p>
           </div>
-
           {error && <div className="error-bar">⚠ {error}</div>}
-
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Your Name */}
+            {[["Your Name","text","staff","Enter your name..."],["Member Name","text","memberName","e.g. Jessica Thompson"],["Date","date","date",""]].map(([label, type, field, placeholder]) => (
+              <div key={field}>
+                <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>{label}</label>
+                <input type={type} placeholder={placeholder} value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))} />
+              </div>
+            ))}
             <div>
-              <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Your Name</label>
-              <input
-                type="text"
-                placeholder="Enter your name..."
-                value={form.staff}
-                onChange={e => setForm(f => ({ ...f, staff: e.target.value }))}
-                autoComplete="name"
-              />
+              <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Referral Source <span style={{ textTransform: "none", letterSpacing: 0, fontSize: 11 }}>(leave blank if none)</span></label>
+              <input type="text" placeholder="Ambassador or instructor name..." value={form.referral} onChange={e => setForm(f => ({ ...f, referral: e.target.value }))} />
+              {hasReferral && <div className="sans" style={{ marginTop: 8, background: "rgba(107,91,123,0.07)", border: "1px solid rgba(107,91,123,0.2)", padding: "10px 14px", fontSize: 12, color: C.purple }}>Referral logged — no commission paid for this sale</div>}
             </div>
-
-            {/* Member Name */}
-            <div>
-              <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Member Name</label>
-              <input
-                type="text"
-                placeholder="e.g. Jessica Thompson"
-                value={form.memberName}
-                onChange={e => setForm(f => ({ ...f, memberName: e.target.value }))}
-              />
-            </div>
-
-            {/* Date */}
-            <div>
-              <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>Date</label>
-              <input
-                type="date"
-                value={form.date}
-                onChange={e => setForm(f => ({ ...f, date: e.target.value }))}
-              />
-            </div>
-
-            {/* Referral */}
-            <div>
-              <label className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", display: "block", marginBottom: 6 }}>
-                Referral Source <span style={{ textTransform: "none", letterSpacing: 0, fontSize: 11 }}>(leave blank if none)</span>
-              </label>
-              <input
-                type="text"
-                placeholder="Ambassador or instructor name..."
-                value={form.referral}
-                onChange={e => setForm(f => ({ ...f, referral: e.target.value }))}
-              />
-              {hasReferral && (
-                <div className="sans" style={{ marginTop: 8, background: "rgba(107,91,123,0.07)", border: "1px solid rgba(107,91,123,0.2)", padding: "10px 14px", fontSize: 12, color: C.purple, letterSpacing: "0.04em" }}>
-                  Referral logged — no commission paid for this sale
-                </div>
-              )}
-            </div>
-
-            {/* Submit button */}
-            <button
-              className={`primary-btn ${submitted ? "pop" : ""}`}
-              onClick={handleSubmit}
-              disabled={!canSubmit || syncing}
-              style={{
-                marginTop: 10,
-                background: submitted ? C.greenLight : hasReferral ? "rgba(107,91,123,0.12)" : C.green,
-                color: submitted ? C.white : hasReferral ? C.purple : C.white,
-                border: hasReferral && !submitted ? "1px solid rgba(107,91,123,0.3)" : "none",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}
-            >
-              {syncing
-                ? <><span className="spinner" /> Saving...</>
-                : submitted
-                  ? "✓ Sale Logged"
-                  : hasReferral
-                    ? "Log Referral Sale"
-                    : "Log Sale — $50"
-              }
+            <button className={`primary-btn ${submitted ? "pop" : ""}`} onClick={handleSubmit} disabled={!canSubmit || syncing}
+              style={{ marginTop: 10, background: submitted ? C.greenLight : hasReferral ? "rgba(107,91,123,0.12)" : C.green, color: submitted ? C.white : hasReferral ? C.purple : C.white, border: hasReferral && !submitted ? "1px solid rgba(107,91,123,0.3)" : "none", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              {syncing ? "Saving..." : submitted ? "✓ Sale Logged" : hasReferral ? "Log Referral Sale" : "Log Sale — $50"}
             </button>
           </div>
-
-          {/* My month summary */}
           {form.staff.trim() && myRecent.length > 0 && (
             <div style={{ marginTop: 44 }}>
               <div style={{ textAlign: "center", marginBottom: 20 }}>
                 <div style={{ width: 40, height: 1, background: C.borderDark, margin: "0 auto" }} />
-                <div className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 14 }}>
-                  {monthNames[new Date().getMonth()]} Summary
-                </div>
+                <div className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginTop: 14 }}>{monthNames[new Date().getMonth()]} Summary</div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: myMonthReferral.length > 0 ? "1fr 1fr" : "1fr", gap: 10, marginBottom: 24 }}>
                 <div className="stat-card" style={{ textAlign: "center" }}>
@@ -448,7 +258,6 @@ export default function App() {
                   </div>
                 )}
               </div>
-
               <div className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.14em", textTransform: "uppercase", marginBottom: 10 }}>Recent Sales</div>
               <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
                 {myRecent.map((s, i) => (
@@ -469,7 +278,7 @@ export default function App() {
         </div>
       )}
 
-      {/* ── CEO VIEW ── */}
+      {/* CEO VIEW */}
       {!loading && view === "ceo" && (
         <div style={{ maxWidth: 600, margin: "0 auto", padding: "44px 24px 60px" }} className="fade-in">
           <div style={{ textAlign: "center", marginBottom: 32 }}>
@@ -477,102 +286,40 @@ export default function App() {
             <h1 style={{ fontSize: 34, fontWeight: 400, marginTop: 12, marginBottom: 6, fontStyle: "italic" }}>Commission Overview</h1>
             <p className="sans" style={{ color: C.muted, fontSize: 11, letterSpacing: "0.1em", textTransform: "uppercase" }}>$50 per direct close · referrals tracked separately</p>
           </div>
-
           {error && <div className="error-bar">⚠ {error}</div>}
-
-          {/* Refresh button */}
           <div style={{ textAlign: "center", marginBottom: 20 }}>
-            <button
-              className="sans"
-              onClick={loadSales}
-              disabled={loading}
-              style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 16px", borderRadius: 20, transition: "all 0.15s" }}
-            >
-              ↻ Refresh
-            </button>
+            <button className="sans" onClick={loadSales} style={{ background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "6px 16px", borderRadius: 20 }}>↻ Refresh</button>
           </div>
-
-          {/* CSV Upload */}
-          <div style={{ background: C.white, border: `1px solid ${C.border}`, padding: "16px 20px", marginBottom: 24, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-            <div>
-              <div className="sans" style={{ fontSize: 11, fontWeight: 500, letterSpacing: "0.1em", textTransform: "uppercase", color: C.text, marginBottom: 3 }}>Member Verification</div>
-              <div className="sans" style={{ fontSize: 12, color: C.muted }}>
-                {csvUploaded ? `${activeMembers.length} active members loaded` : "Upload active members CSV to flag inactive sales"}
-              </div>
-            </div>
-            <label style={{ background: csvUploaded ? C.green : C.soft, color: csvUploaded ? C.white : C.text, border: `1px solid ${csvUploaded ? C.green : C.border}`, cursor: "pointer", fontFamily: "'Jost', sans-serif", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", padding: "8px 14px", borderRadius: 4, fontWeight: 500, whiteSpace: "nowrap" }}>
-              {csvUploaded ? "✓ Loaded — Re-upload" : "Upload CSV"}
-              <input type="file" accept=".csv" onChange={handleCsvUpload} style={{ display: "none" }} />
-            </label>
-          </div>
-
-          {/* Month picker */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 28, justifyContent: "center" }}>
-            <button className={`month-pill ${ytd ? "active" : ""}`} onClick={() => setYtd(true)}>
-              {new Date().getFullYear()} YTD
-            </button>
+            <button className={`month-pill ${ytd ? "active" : ""}`} onClick={() => setYtd(true)}>{currentYear} YTD</button>
             {allMonths.map(m => (
-              <button key={m} className={`month-pill ${!ytd && selectedMonth === m ? "active" : ""}`} onClick={() => { setYtd(false); setSelectedMonth(m); }}>
-                {formatMonthLabel(m)}
-              </button>
+              <button key={m} className={`month-pill ${!ytd && selectedMonth === m ? "active" : ""}`} onClick={() => { setYtd(false); setSelectedMonth(m); }}>{formatMonthLabel(m)}</button>
             ))}
           </div>
-
-          {/* Flagged sales banner */}
-          {csvUploaded && (() => {
-            const flagged = filteredSales.filter(s => !s.referral.trim() && isMemberActive(s.memberName, activeMembers) === false);
-            if (flagged.length === 0) return null;
-            return (
-              <div style={{ background: "rgba(192,57,43,0.06)", border: "1px solid rgba(192,57,43,0.2)", padding: "12px 18px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <div className="sans" style={{ fontSize: 11, fontWeight: 600, color: C.error, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 2 }}>⚠ {flagged.length} Inactive Member{flagged.length > 1 ? "s" : ""} Flagged</div>
-                  <div className="sans" style={{ fontSize: 12, color: C.muted }}>{flagged.map(s => s.memberName).join(", ")}</div>
-                </div>
-                <div className="sans" style={{ fontSize: 13, color: C.error, fontWeight: 600 }}>${flagged.length * COMMISSION_PER_SALE} at risk</div>
-              </div>
-            );
-          })()}
-
-          {/* Summary cards */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 32 }}>
-            {[
-              { label: "Direct Sales", value: directSales.length, color: C.green },
-              { label: "Referral Sales", value: referralSales.length, color: C.purple },
-              { label: "Commission Out", value: `$${totalCommission}`, color: C.gold },
-            ].map(card => (
+            {[{ label: "Direct Sales", value: directSales.length, color: C.green }, { label: "Referral Sales", value: referralSales.length, color: C.purple }, { label: "Commission Out", value: `$${totalCommission}`, color: C.gold }].map(card => (
               <div key={card.label} className="stat-card" style={{ textAlign: "center" }}>
                 <div className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", marginBottom: 8 }}>{card.label}</div>
                 <div style={{ fontSize: 26, fontWeight: 300, fontStyle: "italic", color: card.color }}>{card.value}</div>
               </div>
             ))}
           </div>
-
-          {/* Sub-tabs */}
           <div style={{ display: "flex", gap: 28, borderBottom: `1px solid ${C.border}`, marginBottom: 24 }}>
-            {[["staff", "Staff Commissions"], ["referrals", "Referral Board"], ["log", "All Sales"]].map(([key, label]) => (
+            {[["staff","Staff Commissions"],["referrals","Referral Board"],["log","All Sales"]].map(([key, label]) => (
               <button key={key} className={`sub-tab ${ceoTab === key ? "active" : ""}`} onClick={() => setCeoTab(key)}>{label}</button>
             ))}
           </div>
 
-          {/* STAFF TAB */}
           {ceoTab === "staff" && (
             <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 70px", gap: 8, padding: "10px 18px", borderBottom: `1px solid ${C.border}`, background: C.soft }}>
-                {["Staff", "Direct", "Ref", "Earned"].map((h, i) => (
+                {["Staff","Direct","Ref","Earned"].map((h, i) => (
                   <span key={h} className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em", textAlign: i > 0 ? "right" : "left" }}>{h}</span>
                 ))}
               </div>
-              {staffLeaderboard.length === 0 && (
-                <div style={{ textAlign: "center", padding: "32px 0" }}>
-                  <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
-                </div>
-              )}
+              {staffLeaderboard.length === 0 && <div style={{ textAlign: "center", padding: "32px 0" }}><div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div></div>}
               {staffLeaderboard.map((s, i) => (
-                <div key={s.name} style={{
-                  display: "grid", gridTemplateColumns: "1fr 56px 56px 70px 70px 110px", gap: 8, alignItems: "center",
-                  padding: "14px 18px", borderBottom: i < staffLeaderboard.length - 1 ? `1px solid ${C.border}` : "none",
-                  background: i === 0 ? "rgba(44,74,62,0.03)" : "none"
-                }}>
+                <div key={s.name} style={{ display: "grid", gridTemplateColumns: "1fr 56px 56px 70px", gap: 8, alignItems: "center", padding: "14px 18px", borderBottom: i < staffLeaderboard.length - 1 ? `1px solid ${C.border}` : "none", background: i === 0 ? "rgba(44,74,62,0.03)" : "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {i === 0 && <span style={{ color: C.gold, fontSize: 13 }}>✦</span>}
                     <span style={{ fontSize: 16, fontWeight: i === 0 ? 500 : 400 }}>{s.name}</span>
@@ -580,100 +327,48 @@ export default function App() {
                   <span className="sans" style={{ fontSize: 13, color: s.direct > 0 ? C.green : C.muted, textAlign: "right", fontWeight: 500 }}>{s.direct}</span>
                   <span className="sans" style={{ fontSize: 13, color: s.referral > 0 ? C.purple : C.muted, textAlign: "right", fontWeight: 500 }}>{s.referral}</span>
                   <span className="sans" style={{ fontSize: 13, color: s.commission > 0 ? C.gold : C.muted, textAlign: "right", fontWeight: 600 }}>${s.commission}</span>
-                  <span className="sans" style={{ fontSize: 13, color: s.unpaidCommission > 0 ? C.green : C.muted, textAlign: "right", fontWeight: 600 }}>
-                    {s.unpaidCommission > 0 ? `$${s.unpaidCommission}` : "—"}
-                  </span>
-                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                    {s.unpaidCommission > 0 ? (
-                      <button
-                        onClick={() => markStaffPaid(s.name)}
-                        className="sans"
-                        style={{ background: C.green, color: C.white, border: "none", cursor: "pointer", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", padding: "5px 10px", borderRadius: 4, fontWeight: 500, whiteSpace: "nowrap" }}
-                      >
-                        Mark Paid
-                      </button>
-                    ) : (
-                      <span className="sans" style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>✓ Paid</span>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
           )}
 
-          {/* REFERRAL TAB */}
           {ceoTab === "referrals" && (
-            referralLeaderboard.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div>
-                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No referral closes for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
-              </div>
-            ) : (
-              <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
-                <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 18px", borderBottom: `1px solid ${C.border}`, background: C.soft }}>
-                  <span className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Ambassador / Instructor</span>
-                  <span className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Closes</span>
-                </div>
-                {referralLeaderboard.map((r, i) => (
-                  <div key={r.name} style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "14px 18px", borderBottom: i < referralLeaderboard.length - 1 ? `1px solid ${C.border}` : "none",
-                    background: i === 0 ? "rgba(107,91,123,0.03)" : "none"
-                  }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      {i === 0 && <span style={{ color: C.gold, fontSize: 12 }}>✦</span>}
-                      <span style={{ fontSize: 16, color: C.purple, fontWeight: i === 0 ? 500 : 400 }}>{r.name}</span>
-                    </div>
-                    <span className="sans" style={{ fontSize: 16, color: C.purple, fontWeight: 600 }}>{r.closes}</span>
+            referralLeaderboard.length === 0
+              ? <div style={{ textAlign: "center", padding: "40px 0" }}><div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div><div className="sans" style={{ fontSize: 13, color: C.muted }}>No referral closes for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div></div>
+              : <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 18px", borderBottom: `1px solid ${C.border}`, background: C.soft }}>
+                    <span className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Ambassador / Instructor</span>
+                    <span className="sans" style={{ fontSize: 9, color: C.muted, textTransform: "uppercase", letterSpacing: "0.12em" }}>Closes</span>
                   </div>
-                ))}
-              </div>
-            )
+                  {referralLeaderboard.map((r, i) => (
+                    <div key={r.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 18px", borderBottom: i < referralLeaderboard.length - 1 ? `1px solid ${C.border}` : "none", background: i === 0 ? "rgba(107,91,123,0.03)" : "none" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {i === 0 && <span style={{ color: C.gold, fontSize: 12 }}>✦</span>}
+                        <span style={{ fontSize: 16, color: C.purple, fontWeight: i === 0 ? 500 : 400 }}>{r.name}</span>
+                      </div>
+                      <span className="sans" style={{ fontSize: 16, color: C.purple, fontWeight: 600 }}>{r.closes}</span>
+                    </div>
+                  ))}
+                </div>
           )}
 
-          {/* ALL SALES TAB */}
           {ceoTab === "log" && (
-            filteredSales.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "40px 0" }}>
-                <div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div>
-                <div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div>
-              </div>
-            ) : (
-              <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
-                {filteredSales.map((s, i) => (
-                  <div key={s.id} style={{
-                    display: "flex", justifyContent: "space-between", alignItems: "center",
-                    padding: "13px 18px", borderBottom: i < filteredSales.length - 1 ? `1px solid ${C.border}` : "none"
-                  }}>
-                    <div>
-                      <div style={{ fontSize: 16 }}>{s.memberName}</div>
-                      <div className="sans" style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
-                        {s.staff}
-                        {s.referral && <span style={{ color: C.purple }}> · via {s.referral}</span>}
+            filteredSales.length === 0
+              ? <div style={{ textAlign: "center", padding: "40px 0" }}><div style={{ fontSize: 22, color: C.borderDark, marginBottom: 8 }}>✦</div><div className="sans" style={{ fontSize: 13, color: C.muted }}>No sales logged for {ytd ? `${currentYear} YTD` : formatMonthLabel(selectedMonth)}</div></div>
+              : <div style={{ background: C.white, border: `1px solid ${C.border}` }}>
+                  {filteredSales.map((s, i) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "13px 18px", borderBottom: i < filteredSales.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                      <div>
+                        <div style={{ fontSize: 16 }}>{s.memberName}</div>
+                        <div className="sans" style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{s.staff}{s.referral && <span style={{ color: C.purple }}> · via {s.referral}</span>}</div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div className="sans" style={{ fontSize: 12, color: s.referral ? C.purple : C.green, fontWeight: 600 }}>{s.referral ? "ref" : "$50"}</div>
+                        <div className="sans" style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{s.date}</div>
                       </div>
                     </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div className="sans" style={{ fontSize: 12, color: s.referral ? C.purple : C.green, fontWeight: 600 }}>{s.referral ? "ref" : "$50"}</div>
-                      <div className="sans" style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>{s.date}</div>
-                      {!s.referral && (
-                        <div className="sans" style={{ fontSize: 10, marginTop: 2, color: paidIds.includes(String(s.id)) ? C.muted : C.gold, fontWeight: 500 }}>
-                          {paidIds.includes(String(s.id)) ? "✓ paid" : "unpaid"}
-                        </div>
-                      )}
-                      {(() => {
-                        const status = isMemberActive(s.memberName, activeMembers);
-                        if (status === null) return null;
-                        return (
-                          <div className="sans" style={{ fontSize: 10, marginTop: 2, color: status ? C.green : C.error, fontWeight: 600 }}>
-                            {status ? "✓ active" : "⚠ inactive"}
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
+                  ))}
+                </div>
           )}
         </div>
       )}
